@@ -1,0 +1,7 @@
+{
+    "form_url": "https://rpachallenge.com/?lang=EN",
+    "chromedriver_url": "https://github.com/jsnjack/chromedriver/releases/download/v126.0.6478.126/chromedriver-win64.zip",
+    "download_dir": "downloads",
+    "result_file_path": "results.txt",
+    "wait_timeout": 10
+}
