@@ -21,15 +21,15 @@ from tkinter import scrolledtext
 # ЗАГРУЗКА КОНСТАНТ ИЗ ФАЙЛА config.json
 with open('config.json', 'r') as config_file:
     config = json.load(config_file)
-# присвоение констант
+
 FORM_URL = config['form_url']
-CHROMEDRIVER_URL = config['chromedriver_url'] # испытал большие проблемы с тем чтобы заставить работать вебдрайвер хрома в виртуальном окружении. Свежую и рабочую версию нашел у кого-то на гитхабе. Понимаю ,что решение не очень, но другого не нашел :(
+CHROMEDRIVER_URL = config['chromedriver_url']
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), config['download_dir'])
 RESULT_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), config['result_file_path'])
 WAIT_TIMEOUT = config['wait_timeout']
 
 
-def download_chromedriver(url, extract_to='.'):
+def download_and_extract_chromedriver(url, extract_to='.'):
     local_zip_path = os.path.join(extract_to, 'chromedriver.zip')
     with requests.get(url, stream=True) as r:
         r.raise_for_status()
@@ -39,8 +39,10 @@ def download_chromedriver(url, extract_to='.'):
     with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
         for member in zip_ref.namelist():
             filename = os.path.basename(member)
+            # Skip directories
             if not filename:
                 continue
+            # Copy file (taken from zipfile's extract)
             source = zip_ref.open(member)
             target = open(os.path.join(extract_to, filename), "wb")
             with source, target:
@@ -76,16 +78,16 @@ def prepare_data(file_path):
         address = row['Address']
 
         # Проверка корректности данных
-        if not first_name.isalpha(): # проверяем, что имя состоит из букв
+        if not first_name.isalpha():
             error_messages.append(f"Некорректное имя: {first_name}")
             continue
-        if not last_name.isalpha(): # проверяем, что  фамилия состоит из букв
+        if not last_name.isalpha():
             error_messages.append(f"Некорректная фамилия: {last_name}")
             continue
-        if '@' not in email or '.' not in email: # проверяем, что в мейле есть собака и точка
+        if '@' not in email or '.' not in email:
             error_messages.append(f"Некорректный email: {email}")
             continue
-        if not (any(char.isdigit() for char in address) and any(char.isalpha() for char in address)): # проверяем, что в адресе есть и буквы и цифры
+        if not (any(char.isdigit() for char in address) and any(char.isalpha() for char in address)):
             error_messages.append(f"Некорректный адрес: {address}")
             continue
 
@@ -108,100 +110,91 @@ def parse_results(text):
 
 # ЗАПИСЬ В РЕЗУЛЬТИРУЮЩИЙ ФАЙЛ
 def write_results(results, start_time, error_message=None):
-    end_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()) # фиксируем время конца выполнения программы
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    result_file_path = os.path.join(base_dir, 'results.txt')
+    end_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
 
     with open(RESULT_FILE_PATH, 'a') as file: # путь константа из config
         file.write(f"Время начала выполнения: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}\n")
         file.write(f"Процент успешного заполнения полей: {results[0]} %\n")
         file.write(f"Заполнено полей: {results[1]} / {results[2]}\n")
-        file.write(f"Время выполнения: {results[3]} миллисекунд\n") # фиксисруем данные с последней страницы
+        file.write(f"Время выполнения: {results[3]} миллисекунд\n")
         if error_message:
-            file.write(f"Ошибки: {error_message}\n") # записываем инфу об ошибках (если были)
+            file.write(f"Ошибка: {error_message}\n")
         else:
-            file.write("Запуск программы прошел успешно\n") # или сообщение об остуствии ошибок
+            file.write("Запуск программы прошел успешно\n")
         file.write(f"Время окончания выполнения: {end_time}\n")
-        file.write("-" * 40 + "\n") # делаем пунктирный разделитель
-
+        file.write("-" * 40 + "\n")
 # ОСНОВНАЯ ФУНКЦИЯ ЗАПОЛНЕНИЯ ВЕБ-ФОРМЫ
 def fill_web_form(form_url, output_box, driver):
-    start_time = time.time() # фиксируем время начала выполнения
+    start_time = time.time()
     output_box.insert(tk.END, "Заполнение форм началось...\n")
     driver.get(form_url)
 
     wait = WebDriverWait(driver, WAIT_TIMEOUT) # время ожидания - константа из config файла
 
     try:
-        # жмём кнопку Start
         start_button = wait.until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'btn-large') and contains(text(), 'Start')]"))
         )
         start_button.click()
 
-        # жмём кнопку Download Excel
         download_button = wait.until(
             EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, 'btn waves-effect waves-light uiColorPrimary') and contains(text(), 'Download Excel')]"))
         )
         download_button.click()
 
-        downloaded_file = os.path.join(DOWNLOAD_DIR, 'challenge.xlsx') # сохраняем исходник в downloads в папке проекта
+        downloaded_file = os.path.join(DOWNLOAD_DIR, 'challenge.xlsx')
 
         # Удаление существующего файла перед загрузкой нового
         delete_existing_file(downloaded_file)
 
-        # ождидание доступности скаченного файла-исходника
-        while not os.path.exists(downloaded_file): # ждём пока файл не появится в папке downloads
-            time.sleep(0.5)
+        while not os.path.exists(downloaded_file):
+            time.sleep(1)
 
-        data_to_fill, error_messages = prepare_data(downloaded_file)
-        output_box.insert(tk.END, "Данные проверены\n")
+        data_to_fill = prepare_data(downloaded_file)
+        output_box.insert(tk.END, "Данные подготовлены...\n")
 
         forms_cnt = 0
+        error_message = None
 
-        for entry in data_to_fill: # Изменил обращение к элементам форм с css_selector на xpath, добавил дополнительную обработку исключений
+        for entry in data_to_fill:
             try:
-                # Заполняем Last Name
                 last_name_input = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//*[@ng-reflect-name='labelLastName']"))
                 )
                 last_name_input.send_keys(entry['last_name'])
 
-                # Заполняем First Name
                 first_name_input = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//*[@ng-reflect-name='labelFirstName']"))
                 )
                 first_name_input.send_keys(entry['first_name'])
 
-                # Заполняем Company Name
                 company_name_input = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//*[@ng-reflect-name='labelCompanyName']"))
                 )
                 company_name_input.send_keys(entry['company_name'])
 
-                # Заполняем Role in Company
                 role_input = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//*[@ng-reflect-name='labelRole']"))
                 )
                 role_input.send_keys(entry['role_in_company'])
 
-                # Заполняем Address
                 address_input = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//*[@ng-reflect-name='labelAddress']"))
                 )
                 address_input.send_keys(entry['address'])
 
-                # Заполняем Email
                 email_input = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//*[@ng-reflect-name='labelEmail']"))
                 )
                 email_input.send_keys(entry['email'])
 
-                # Заполняем Phone
                 phone_input = wait.until(
                     EC.presence_of_element_located((By.XPATH, "//*[@ng-reflect-name='labelPhone']"))
                 )
                 phone_input.send_keys(entry['phone'])
 
-                # жмём кнопку Submit
                 submit_button = wait.until(
                     EC.element_to_be_clickable((By.XPATH, "//input[@type='submit' and @value='Submit']"))
                 )
@@ -218,7 +211,9 @@ def fill_web_form(form_url, output_box, driver):
         error_message = str(e)
         output_box.insert(tk.END, f"Ошибка: {error_message}\n")
 
-    # Парсинг текста с результатами на последней странице
+    execution_time = time.time() - start_time  # фиксируем время выполнения
+
+    # Парсинг текста с результатами
     result_element = driver.find_element(By.XPATH, "//div[contains(@class, 'message2')]")
     result_text = result_element.text
     results = parse_results(result_text)
@@ -255,7 +250,7 @@ def run_gui():
         base_dir = os.path.dirname(os.path.abspath(__file__))
         chromedriver_path = os.path.join(base_dir, 'chromedriver.exe')
         if not os.path.exists(chromedriver_path):
-            download_chromedriver(CHROMEDRIVER_URL, base_dir)
+            download_and_extract_chromedriver(CHROMEDRIVER_URL, base_dir)
 
         driver = webdriver.Chrome(executable_path=chromedriver_path, options=chrome_options)
     except WebDriverException:
