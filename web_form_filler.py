@@ -39,10 +39,10 @@ def download_and_extract_chromedriver(url, extract_to='.'):
     with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
         for member in zip_ref.namelist():
             filename = os.path.basename(member)
-            # Skip directories
+
             if not filename:
                 continue
-            # Copy file (taken from zipfile's extract)
+
             source = zip_ref.open(member)
             target = open(os.path.join(extract_to, filename), "wb")
             with source, target:
@@ -51,7 +51,7 @@ def download_and_extract_chromedriver(url, extract_to='.'):
 
 # ПОЛУЧЕНИЕ ПУТИ К ПАПКЕ ЗАГРУЗКИ
 def get_download_path():
-    if os.name == 'nt':  # Windows
+    if os.name == 'nt':  # 
         return os.path.join(os.environ['USERPROFILE'], 'Downloads')
     else:  # MacOS, Linux
         return os.path.join(os.path.expanduser('~'), 'Downloads')
